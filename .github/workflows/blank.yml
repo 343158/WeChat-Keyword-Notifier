@@ -29,8 +29,21 @@ jobs:
         sed -i 's/\r$//' gradlew
         chmod +x gradlew
       
+    - name: Debug info
+      run: |
+        echo "=== Current directory ==="
+        ls -la
+        echo "=== gradlew file ==="
+        file gradlew
+        head -3 gradlew
+        echo "=== app/build.gradle exists? ==="
+        ls -la app/build.gradle || echo "NOT FOUND"
+      
     - name: Build debug APK
       run: ./gradlew assembleDebug --no-daemon --stacktrace
+      
+    - name: Find APK files
+      run: find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
       
     - name: Upload APK as artifact
       uses: actions/upload-artifact@v4
