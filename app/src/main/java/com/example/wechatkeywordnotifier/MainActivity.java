@@ -1,12 +1,10 @@
 package com.example.wechatkeywordnotifier;
 
-import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.view.accessibility.AccessibilityServiceInfo;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -21,7 +19,7 @@ import android.content.SharedPreferences;
 
 public class MainActivity extends AppCompatActivity {
     
-    private static final String KEY_KEYWORDS = "keywords";
+    public static final String KEY_KEYWORDS = "keywords";
     private static final String CHANNEL_ID = "keyword_alert_channel";
     
     private SharedPreferences prefs;
