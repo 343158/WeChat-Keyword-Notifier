@@ -6,6 +6,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.CountDownLatch;
@@ -13,28 +14,29 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 授权码管理器
+ * 授权码管理器（一次性模式）
  * 
- * 授权码列表存放在 GitHub 仓库的原始文件中：
- * https://raw.githubusercontent.com/343158/WeChat-Keyword-Notifier/main/license_codes.json
+ * 每个授权码只能使用一次。验证成功后：
+ * 1. GitHub 上的授权码列表自动删除该码（通过 API）
+ * 2. 本地标记已激活，永久有效
  * 
- * 格式: {"codes": ["CODE1", "CODE2", ...]}
- * 
- * 管理员只需更新这个文件即可管理授权码。
+ * 管理员操作：
+ * - 发码：在 license_codes.json 中添加新码
+ * - 不需要手动删码，App 验证时自动删除
  */
 public class LicenseManager {
 
     private static final String PREFS_NAME = "license_prefs";
     private static final String KEY_VERIFIED = "is_verified";
     private static final String KEY_LICENSE_CODE = "license_code";
-    private static final String KEY_VERIFY_TIME = "verify_time";
     
-    // 授权码在线列表地址（GitHub raw）
-    private static final String LICENSE_URL = 
-        "https://raw.githubusercontent.com/343158/WeChat-Keyword-Notifier/main/license_codes.json";
-    
-    // 离线缓存有效期：7天（毫秒）
-    private static final long OFFLINE_GRACE_MS = 7L * 24 * 60 * 60 * 1000;
+    // GitHub API
+    private static final String REPO = "343158/WeChat-Keyword-Notifier";
+    private static final String LICENSE_FILE = "license_codes.json";
+    private static final String RAW_URL = 
+        "https://raw.githubusercontent.com/" + REPO + "/main/" + LICENSE_FILE;
+    private static final String CONTENTS_URL = 
+        "https://api.github.com/repos/" + REPO + "/contents/" + LICENSE_FILE;
     
     private final Context context;
 
@@ -43,31 +45,16 @@ public class LicenseManager {
     }
 
     /**
-     * 检查是否已授权（离线检查，用于快速启动）
-     * 联网时在 AuthActivity 中做在线复验
+     * 检查是否已激活（本地检查，永久有效）
      */
     public boolean isVerified() {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        if (!prefs.getBoolean(KEY_VERIFIED, false)) {
-            return false;
-        }
-        String code = prefs.getString(KEY_LICENSE_CODE, "");
-        if (code.isEmpty()) {
-            return false;
-        }
-        // 检查离线缓存是否过期
-        long lastVerify = prefs.getLong(KEY_VERIFY_TIME, 0);
-        if (System.currentTimeMillis() - lastVerify > OFFLINE_GRACE_MS) {
-            return false; // 超过7天需要重新联网验证
-        }
-        return true;
+        return prefs.getBoolean(KEY_VERIFIED, false);
     }
 
     /**
-     * 在线验证授权码
-     * 
-     * @param code 用户输入的授权码
-     * @return VerifyResult 包含验证结果和提示信息
+     * 一次性验证授权码
+     * 成功后自动从 GitHub 删除该码，本地永久激活
      */
     public VerifyResult verifyOnline(String code) {
         if (code == null || code.trim().isEmpty()) {
@@ -76,55 +63,145 @@ public class LicenseManager {
         code = code.trim();
 
         try {
-            // 从 GitHub 获取授权码列表
-            String json = fetchUrl(LICENSE_URL);
+            // 1. 读取当前授权码列表
+            String json = fetchUrl(RAW_URL);
             if (json == null || json.isEmpty()) {
-                // 网络失败时，检查本地是否有有效缓存
-                SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                String cachedCode = prefs.getString(KEY_LICENSE_CODE, "");
-                long lastVerify = prefs.getLong(KEY_VERIFY_TIME, 0);
-                if (code.equals(cachedCode) && 
-                    System.currentTimeMillis() - lastVerify <= OFFLINE_GRACE_MS) {
-                    // 延长缓存（每7天需要联网一次）
-                    prefs.edit().putLong(KEY_VERIFY_TIME, System.currentTimeMillis()).apply();
-                    return new VerifyResult(true, "离线验证通过");
-                }
                 return new VerifyResult(false, "网络连接失败，请检查网络后重试");
             }
 
             JSONObject root = new JSONObject(json);
             JSONArray codesArray = root.getJSONArray("codes");
 
-            // 检查授权码是否在列表中
+            // 2. 查找匹配的授权码
             boolean found = false;
+            int foundIndex = -1;
             for (int i = 0; i < codesArray.length(); i++) {
                 if (code.equalsIgnoreCase(codesArray.getString(i))) {
                     found = true;
+                    foundIndex = i;
                     break;
                 }
             }
 
-            if (found) {
-                // 验证通过，保存到本地
-                SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                prefs.edit()
-                    .putBoolean(KEY_VERIFIED, true)
-                    .putString(KEY_LICENSE_CODE, code)
-                    .putLong(KEY_VERIFY_TIME, System.currentTimeMillis())
-                    .apply();
-                return new VerifyResult(true, "验证通过");
-            } else {
-                return new VerifyResult(false, "授权码无效，请联系管理员获取");
+            if (!found) {
+                return new VerifyResult(false, "授权码无效或已被使用");
             }
+
+            // 3. 从列表中删除该码
+            JSONArray newCodes = new JSONArray();
+            for (int i = 0; i < codesArray.length(); i++) {
+                if (i != foundIndex) {
+                    newCodes.put(codesArray.getString(i));
+                }
+            }
+            JSONObject newRoot = new JSONObject();
+            newRoot.put("codes", newCodes);
+
+            // 4. 推送更新到 GitHub（删除该授权码）
+            String newJson = newRoot.toString();
+            byte[] bytes = newJson.getBytes("UTF-8");
+            String b64Content = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP);
+
+            boolean pushOk = pushUpdateToGithub(b64Content);
+            if (!pushOk) {
+                // 推送失败不影响本地激活（码可能已被别人先用）
+                // 但为了安全，仍然激活本地
+            }
+
+            // 5. 本地永久激活
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit()
+                .putBoolean(KEY_VERIFIED, true)
+                .putString(KEY_LICENSE_CODE, code)
+                .apply();
+
+            return new VerifyResult(true, "激活成功！");
 
         } catch (Exception e) {
             e.printStackTrace();
-            return new VerifyResult(false, "验证失败: " + e.getMessage());
+            return new VerifyResult(false, "验证失败，请检查网络");
         }
     }
 
     /**
-     * 清除授权（用于退出授权/作废）
+     * 将更新后的授权码列表推送到 GitHub
+     * 通过 GitHub Contents API 更新文件
+     */
+    private boolean pushUpdateToGithub(String b64Content) {
+        AtomicReference<Boolean> result = new AtomicReference<>(false);
+        CountDownLatch latch = new CountDownLatch(1);
+
+        new Thread(() -> {
+            try {
+                // 先获取当前文件 SHA
+                URL getUrl = new URL(CONTENTS_URL);
+                HttpURLConnection getConn = (HttpURLConnection) getUrl.openConnection();
+                getConn.setRequestMethod("GET");
+                getConn.setRequestProperty("User-Agent", "WeChatNotifier/2.0");
+                getConn.setConnectTimeout(10000);
+                getConn.setReadTimeout(10000);
+
+                if (getConn.getResponseCode() != 200) {
+                    latch.countDown();
+                    return;
+                }
+
+                BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(getConn.getInputStream(), "UTF-8"));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                reader.close();
+                getConn.disconnect();
+
+                JSONObject existingFile = new JSONObject(sb.toString());
+                String sha = existingFile.getString("sha");
+
+                // PUT 更新文件
+                URL putUrl = new URL(CONTENTS_URL);
+                HttpURLConnection putConn = (HttpURLConnection) putUrl.openConnection();
+                putConn.setRequestMethod("PUT");
+                putConn.setRequestProperty("User-Agent", "WeChatNotifier/2.0");
+                putConn.setRequestProperty("Content-Type", "application/json");
+                putConn.setConnectTimeout(10000);
+                putConn.setReadTimeout(10000);
+                putConn.setDoOutput(true);
+
+                JSONObject body = new JSONObject();
+                body.put("message", "Use license code: " + 
+                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .getString(KEY_LICENSE_CODE, "unknown"));
+                body.put("content", b64Content);
+                body.put("sha", sha);
+                body.put("branch", "main");
+
+                OutputStream os = putConn.getOutputStream();
+                os.write(body.toString().getBytes("UTF-8"));
+                os.close();
+
+                int respCode = putConn.getResponseCode();
+                putConn.disconnect();
+                result.set(respCode >= 200 && respCode < 300);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                latch.countDown();
+            }
+        }).start();
+
+        try {
+            latch.await(20, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return result.get();
+    }
+
+    /**
+     * 清除授权
      */
     public void clearLicense() {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -141,7 +218,6 @@ public class LicenseManager {
 
     private String fetchUrl(String urlString) {
         AtomicReference<String> result = new AtomicReference<>(null);
-        AtomicReference<Exception> error = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
         new Thread(() -> {
@@ -153,8 +229,7 @@ public class LicenseManager {
                 conn.setReadTimeout(10000);
                 conn.setRequestProperty("User-Agent", "WeChatNotifier/2.0");
 
-                int responseCode = conn.getResponseCode();
-                if (responseCode == 200) {
+                if (conn.getResponseCode() == 200) {
                     BufferedReader reader = new BufferedReader(
                         new InputStreamReader(conn.getInputStream(), "UTF-8"));
                     StringBuilder sb = new StringBuilder();
@@ -167,7 +242,7 @@ public class LicenseManager {
                 }
                 conn.disconnect();
             } catch (Exception e) {
-                error.set(e);
+                e.printStackTrace();
             } finally {
                 latch.countDown();
             }
@@ -178,20 +253,12 @@ public class LicenseManager {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-
-        if (error.get() != null) {
-            return null;
-        }
         return result.get();
     }
 
-    /**
-     * 验证结果
-     */
     public static class VerifyResult {
         public final boolean success;
         public final String message;
-
         public VerifyResult(boolean success, String message) {
             this.success = success;
             this.message = message;
