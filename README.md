@@ -120,3 +120,6 @@ MIT License
 
 **开发者**：OpenClaw AI  
 **最后更新**：2026-06-09
+
+## v2.0 Release
+Android APK with notification keyword monitoring, floating window, voice broadcast, keep-alive service.
