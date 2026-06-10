@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import android.preference.PreferenceManager;
+import android.widget.ImageButton;
 import android.content.SharedPreferences;
 
 public class MainActivity extends AppCompatActivity {
@@ -54,6 +55,12 @@ public class MainActivity extends AppCompatActivity {
         
         buttonAdd.setOnClickListener(v -> addKeyword());
         buttonRemove.setOnClickListener(v -> removeKeyword());
+        
+        // 添加查看历史按钮
+        Button btnHistory = findViewById(R.id.btnHistory);
+        btnHistory.setOnClickListener(v -> {
+            startActivity(new Intent(MainActivity.this, HistoryActivity.class));
+        });
     }
     
     private void addKeyword() {
