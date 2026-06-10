@@ -225,7 +225,7 @@ public class MainActivity extends AppCompatActivity {
             tvStatus.setOnClickListener(v -> openNotificationListenerSettings());
             new AlertDialog.Builder(this)
                     .setTitle("需要授权通知监听")
-                    .setMessage("本App需要"通知使用权"才能监听微信消息。\n\n点击"去授权"后，在设置页面找到本App，打开开关即可。")
+                    .setMessage("本App需要[通知使用权]才能监听微信消息。\n\n点击[去授权]后，在设置页面找到本App，打开开关即可。")
                     .setPositiveButton("去授权", (dialog, which) -> openNotificationListenerSettings())
                     .setCancelable(false)
                     .show();
@@ -243,7 +243,7 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Intent intent = new Intent(Settings.ACTION_SETTINGS);
             startActivity(intent);
-            Toast.makeText(this, "请在设置中找到"通知使用权"并授权本App", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "请在设置中找到[通知使用权]并授权本App", Toast.LENGTH_LONG).show();
         }
     }
 
