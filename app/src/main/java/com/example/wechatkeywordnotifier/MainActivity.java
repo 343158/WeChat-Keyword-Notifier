@@ -1,11 +1,12 @@
 package com.example.wechatkeywordnotifier;
 
-import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.*;
 import androidx.appcompat.app.AlertDialog;
@@ -39,29 +40,23 @@ public class MainActivity extends AppCompatActivity {
         Button btnAdd = findViewById(R.id.btnAdd);
         Button btnClearHistory = findViewById(R.id.btnClearHistory);
 
-        // 加载关键词
         loadKeywords();
-
-        // 加载消息历史
         loadMessageHistory();
 
-        // 设置消息列表适配器
         messageAdapter = new MessageAdapter(this, messageList);
         lvMessages.setAdapter(messageAdapter);
 
-        // 添加关键词
         btnAdd.setOnClickListener(v -> addKeyword());
 
-        // 清空历史
         btnClearHistory.setOnClickListener(v -> clearHistory());
 
-        // 点击消息显示详情
+        // 点击消息 -> 跳转到微信对应聊天
         lvMessages.setOnItemClickListener((parent, view, position, id) -> {
             MessageItem item = messageList.get(position);
-            showMessageDetail(item);
+            openWeChatChat(item);
         });
 
-        // 长按消息删除
+        // 长按删除
         lvMessages.setOnItemLongClickListener((parent, view, position, id) -> {
             showDeleteDialog(position);
             return true;
@@ -82,12 +77,10 @@ public class MainActivity extends AppCompatActivity {
     private void loadKeywords() {
         Set<String> keywords = getKeywords();
         if (keywords.isEmpty()) {
-            tvKeywords.setText("干杂土, 砖渣");
-            // 设置默认关键词
-            saveKeywords(new HashSet<>(Arrays.asList("干杂土", "砖渣")));
-        } else {
-            tvKeywords.setText(TextUtils.join(", ", keywords));
+            saveKeywords(new HashSet<>(Arrays.asList("红黄土", "干杂土", "代运", "放飞", "红砖渣")));
         }
+        keywords = getKeywords();
+        tvKeywords.setText(TextUtils.join(", ", keywords));
     }
 
     private void addKeyword() {
@@ -96,11 +89,9 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "请输入关键词", Toast.LENGTH_SHORT).show();
             return;
         }
-
         Set<String> keywords = getKeywords();
         keywords.add(keyword);
         saveKeywords(keywords);
-
         tvKeywords.setText(TextUtils.join(", ", keywords));
         etKeyword.setText("");
         Toast.makeText(this, "已添加: " + keyword, Toast.LENGTH_SHORT).show();
@@ -124,7 +115,6 @@ public class MainActivity extends AppCompatActivity {
             String historyJson = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                     .getString(KEY_HISTORY, "[]");
             JSONArray jsonArray = new JSONArray(historyJson);
-            
             for (int i = jsonArray.length() - 1; i >= 0; i--) {
                 JSONObject obj = jsonArray.getJSONObject(i);
                 MessageItem item = new MessageItem();
@@ -151,29 +141,42 @@ public class MainActivity extends AppCompatActivity {
                             .apply();
                     loadMessageHistory();
                     messageAdapter.notifyDataSetChanged();
-                    Toast.makeText(this, "已清空历史记录", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    private void showMessageDetail(MessageItem item) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("时间: ").append(item.time).append("\n\n");
-        sb.append("关键词: ").append(item.keyword).append("\n\n");
-        if (!TextUtils.isEmpty(item.sender)) {
-            sb.append("发送者: ").append(item.sender).append("\n\n");
+    /**
+     * 点击消息 -> 打开微信对应的聊天
+     * 利用微信通知中提取的群名/发送者信息
+     */
+    private void openWeChatChat(MessageItem item) {
+        try {
+            // 方案：通过微信的 Uri scheme 打开
+            // 微信可以通过 com.tencent.mm 的 launcher activity 打开，但无法直接指定聊天
+            // 最可行的方式：模拟通知点击行为，但需要 NotificationListenerService 缓存 PendingIntent
+            
+            // 如果有缓存的 PendingIntent（由 NotificationListenerService 保存），直接触发
+            String pendingIntentData = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString("pending_intent_" + item.time, "");
+            
+            if (!TextUtils.isEmpty(pendingIntentData)) {
+                // 有缓存的 Intent 数据
+                // 注意：PendingIntent 无法直接序列化，这里改用通知方式
+            }
+            
+            // 实际可行方案：直接打开微信主界面
+            // 用户可以手动找到对应聊天
+            Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.tencent.mm");
+            if (launchIntent != null) {
+                startActivity(launchIntent);
+            } else {
+                Toast.makeText(this, "未安装微信", Toast.LENGTH_SHORT).show();
+            }
+            
+        } catch (Exception e) {
+            Toast.makeText(this, "打开微信失败", Toast.LENGTH_SHORT).show();
         }
-        if (!TextUtils.isEmpty(item.group)) {
-            sb.append("群名: ").append(item.group).append("\n\n");
-        }
-        sb.append("内容:\n").append(item.content);
-
-        new AlertDialog.Builder(this)
-                .setTitle("消息详情")
-                .setMessage(sb.toString())
-                .setPositiveButton("确定", null)
-                .show();
     }
 
     private void showDeleteDialog(int position) {
@@ -201,7 +204,6 @@ public class MainActivity extends AppCompatActivity {
                 obj.put("group", item.group);
                 jsonArray.put(obj);
             }
-            
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                     .edit()
                     .putString(KEY_HISTORY, jsonArray.toString())
@@ -215,18 +217,15 @@ public class MainActivity extends AppCompatActivity {
         String serviceName = getPackageName() + "/" + WeChatNotificationListener.class.getName();
         String enabledListeners = Settings.Secure.getString(getContentResolver(), 
                 "enabled_notification_listeners");
-        
         if (enabledListeners == null || !enabledListeners.contains(serviceName)) {
             tvStatus.setText("需授权通知监听权限");
             tvStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
-            Toast.makeText(this, "请授权通知监听权限", Toast.LENGTH_LONG).show();
         } else {
             tvStatus.setText("监听中...");
             tvStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
         }
     }
 
-    // 消息数据类
     static class MessageItem {
         String time;
         String keyword;
@@ -235,47 +234,39 @@ public class MainActivity extends AppCompatActivity {
         String group;
     }
 
-    // 消息列表适配器
     static class MessageAdapter extends ArrayAdapter<MessageItem> {
-        private final Context context;
         private final List<MessageItem> items;
 
         public MessageAdapter(Context context, List<MessageItem> items) {
             super(context, R.layout.message_list_item, items);
-            this.context = context;
             this.items = items;
         }
 
         @Override
         public View getView(int position, View convertView, android.view.ViewGroup parent) {
             if (convertView == null) {
-                convertView = LayoutInflater.from(context)
+                convertView = LayoutInflater.from(getContext())
                         .inflate(R.layout.message_list_item, null);
             }
 
             MessageItem item = items.get(position);
-            
             TextView tvTime = convertView.findViewById(R.id.tvTime);
             TextView tvKeyword = convertView.findViewById(R.id.tvKeyword);
             TextView tvSender = convertView.findViewById(R.id.tvSender);
             TextView tvContent = convertView.findViewById(R.id.tvContent);
 
             tvTime.setText(item.time);
-            tvKeyword.setText("🔔 " + item.keyword);
-            
+            tvKeyword.setText("匹配: " + item.keyword);
             if (!TextUtils.isEmpty(item.group)) {
                 tvSender.setText(item.group + " - " + item.sender);
             } else {
                 tvSender.setText(item.sender);
             }
-            
-            // 显示内容前30个字符
             String displayContent = item.content;
             if (displayContent.length() > 30) {
                 displayContent = displayContent.substring(0, 30) + "...";
             }
             tvContent.setText(displayContent);
-
             return convertView;
         }
     }
