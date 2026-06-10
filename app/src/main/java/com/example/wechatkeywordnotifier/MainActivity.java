@@ -72,6 +72,7 @@ public class MainActivity extends AppCompatActivity {
         if (messageAdapter != null) {
             messageAdapter.notifyDataSetChanged();
         }
+        checkPermission();
     }
 
     private void loadKeywords() {
@@ -217,12 +218,32 @@ public class MainActivity extends AppCompatActivity {
         String serviceName = getPackageName() + "/" + WeChatNotificationListener.class.getName();
         String enabledListeners = Settings.Secure.getString(getContentResolver(), 
                 "enabled_notification_listeners");
-        if (enabledListeners == null || !enabledListeners.contains(serviceName)) {
-            tvStatus.setText("需授权通知监听权限");
+        boolean hasPermission = enabledListeners != null && enabledListeners.contains(serviceName);
+        if (!hasPermission) {
+            tvStatus.setText("⚠ 需授权通知监听权限（点击此处）");
             tvStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+            tvStatus.setOnClickListener(v -> openNotificationListenerSettings());
+            new AlertDialog.Builder(this)
+                    .setTitle("需要授权通知监听")
+                    .setMessage("本App需要"通知使用权"才能监听微信消息。\n\n点击"去授权"后，在设置页面找到本App，打开开关即可。")
+                    .setPositiveButton("去授权", (dialog, which) -> openNotificationListenerSettings())
+                    .setCancelable(false)
+                    .show();
         } else {
-            tvStatus.setText("监听中...");
+            tvStatus.setText("✅ 监听中...");
             tvStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+            tvStatus.setOnClickListener(null);
+        }
+    }
+
+    private void openNotificationListenerSettings() {
+        try {
+            Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+            startActivity(intent);
+        } catch (Exception e) {
+            Intent intent = new Intent(Settings.ACTION_SETTINGS);
+            startActivity(intent);
+            Toast.makeText(this, "请在设置中找到"通知使用权"并授权本App", Toast.LENGTH_LONG).show();
         }
     }
 
