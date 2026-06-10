@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floatingContainer"
+    android:layout_width="280dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="#FFFFFF"
+    android:elevation="10dp">
+
+    <TextView
+        android:id="@+id/floatingTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="关键词提醒"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textColor="#FF5722" />
+
+    <TextView
+        android:id="@+id/floatingContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="消息内容..."
+        android:textSize="13sp"
+        android:textColor="#333333"
+        android:layout_marginTop="4dp"
+        android:maxLines="3"
+        android:ellipsize="end" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <Button
+            android:id="@+id/floatingBtnView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="查看历史"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/floatingBtnClose"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="关闭"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+</LinearLayout>

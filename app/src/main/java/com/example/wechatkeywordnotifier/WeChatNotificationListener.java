@@ -3,6 +3,8 @@ package com.example.wechatkeywordnotifier;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
@@ -21,26 +23,34 @@ public class WeChatNotificationListener extends NotificationListenerService {
     public static final String KEY_KEYWORDS = "keywords";
     private static final String KEY_HISTORY = "message_history";
     private static final String CHANNEL_ID = "wechat_keyword_alert";
-    private static final int MAX_HISTORY = 100;
+    private static final int MAX_HISTORY = 200;
     private static final String[] DEFAULT_KEYWORDS = {"红黄土", "干杂土", "代运", "放飞", "红砖渣"};
 
     private TextToSpeech tts;
     private Set<String> keywords = new HashSet<>();
+    private boolean ttsEnabled = true;
+    private boolean floatEnabled = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "Service onCreate");
+
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 tts.setLanguage(Locale.CHINESE);
             }
         });
+
         // 创建通知渠道
-        android.app.NotificationChannel channel = new android.app.NotificationChannel(
-                CHANNEL_ID, "关键词提醒", android.app.NotificationManager.IMPORTANCE_HIGH);
-        android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
-        nm.createNotificationChannel(channel);
+        if (Build.VERSION.SDK_INT >= 26) {
+            android.app.NotificationChannel channel = new android.app.NotificationChannel(
+                    CHANNEL_ID, "关键词提醒", android.app.NotificationManager.IMPORTANCE_HIGH);
+            android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
+            nm.createNotificationChannel(channel);
+        }
+
+        loadPreferences();
     }
 
     @Override
@@ -51,6 +61,8 @@ public class WeChatNotificationListener extends NotificationListenerService {
         if (keywords.isEmpty()) {
             keywords = new HashSet<>(Arrays.asList(DEFAULT_KEYWORDS));
         }
+
+        loadPreferences();
 
         try {
             Notification notification = sbn.getNotification();
@@ -90,13 +102,25 @@ public class WeChatNotificationListener extends NotificationListenerService {
                     sender = title.substring(start + 1, end);
                 }
 
-                saveMessage(matchedKeyword, sender, fullContent.trim(), groupName);
+                String messageKey = saveMessage(matchedKeyword, sender, fullContent.trim(), groupName);
 
-                // 关键：使用原始通知的 PendingIntent，点击后直接跳转到微信对应的聊天
+                // 缓存原始通知的 PendingIntent，供 MainActivity 跳转聊天使用
+                PendingIntent originalIntent = notification.contentIntent;
+                if (originalIntent != null && messageKey != null) {
+                    MainActivity.pendingIntentCache.put(messageKey, originalIntent);
+                    Log.d(TAG, "Cached PendingIntent for key: " + messageKey);
+                }
+
+                // 发送提醒通知（点击后跳转微信聊天）
                 sendAlertNotification(matchedKeyword, sender, fullContent.trim(), notification);
 
                 // 语音播报
                 speakAlert(matchedKeyword, sender);
+
+                // 悬浮窗提醒
+                if (floatEnabled) {
+                    showFloatingAlert(matchedKeyword, sender, fullContent.trim());
+                }
             }
         } catch (Exception e) {
             Log.e(TAG, "Error processing notification", e);
@@ -104,8 +128,7 @@ public class WeChatNotificationListener extends NotificationListenerService {
     }
 
     /**
-     * 发送提醒通知，点击通知后直接飞到微信对应的群/聊天
-     * 核心原理：复用微信原始通知中的 PendingIntent（contentIntent）
+     * 发送提醒通知，点击后跳转到微信对应聊天
      */
     private void sendAlertNotification(String keyword, String sender, String content, Notification originalNotification) {
         try {
@@ -116,17 +139,15 @@ public class WeChatNotificationListener extends NotificationListenerService {
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setAutoCancel(true);
 
-            // 关键：复用微信原始通知的 PendingIntent
-            // 点击我们的通知 -> 直接跳转到微信对应的聊天页面
+            // 复用微信原始通知的 PendingIntent → 点击后直接跳到微信对应聊天
             PendingIntent originalIntent = originalNotification.contentIntent;
             if (originalIntent != null) {
                 builder.setContentIntent(originalIntent);
-                Log.d(TAG, "Using original WeChat PendingIntent for click action");
+                Log.d(TAG, "Using original WeChat PendingIntent");
             }
 
             NotificationManagerCompat.from(this).notify(
                     (int) (System.currentTimeMillis() / 1000), builder.build());
-            Log.d(TAG, "Alert notification sent with original PendingIntent");
 
         } catch (Exception e) {
             Log.e(TAG, "Failed to send alert", e);
@@ -138,18 +159,33 @@ public class WeChatNotificationListener extends NotificationListenerService {
                 .getStringSet(KEY_KEYWORDS, new HashSet<>());
     }
 
-    private void saveMessage(String keyword, String sender, String content, String group) {
+    private void loadPreferences() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        ttsEnabled = prefs.getBoolean("tts_enabled", true);
+        floatEnabled = prefs.getBoolean("float_enabled", false);
+    }
+
+    /**
+     * 保存消息到历史记录，返回 messageKey
+     */
+    private String saveMessage(String keyword, String sender, String content, String group) {
         try {
             String historyJson = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                     .getString(KEY_HISTORY, "[]");
             JSONArray jsonArray = new JSONArray(historyJson);
 
+            String now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
+
             JSONObject msg = new JSONObject();
-            msg.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
+            msg.put("time", now);
             msg.put("keyword", keyword);
             msg.put("sender", sender);
             msg.put("content", content);
             msg.put("group", group);
+
+            // 生成唯一键用于 PendingIntent 缓存
+            String messageKey = now + "_" + keyword + "_" + sender.hashCode();
+            msg.put("messageKey", messageKey);
 
             JSONArray newArray = new JSONArray();
             newArray.put(msg);
@@ -161,12 +197,17 @@ public class WeChatNotificationListener extends NotificationListenerService {
                     .edit()
                     .putString(KEY_HISTORY, newArray.toString())
                     .apply();
+
+            return messageKey;
+
         } catch (Exception e) {
             Log.e(TAG, "Save failed", e);
+            return null;
         }
     }
 
     private void speakAlert(String keyword, String sender) {
+        if (!ttsEnabled) return;
         try {
             if (tts != null) {
                 String text = "提醒，匹配到关键词" + keyword + "，来自" + sender;
@@ -174,6 +215,22 @@ public class WeChatNotificationListener extends NotificationListenerService {
             }
         } catch (Exception e) {
             Log.e(TAG, "TTS failed", e);
+        }
+    }
+
+    private void showFloatingAlert(String keyword, String sender, String content) {
+        try {
+            Intent intent = new Intent(this, FloatingAlertService.class);
+            intent.putExtra("keyword", keyword);
+            intent.putExtra("sender", sender);
+            intent.putExtra("content", content);
+            if (Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(intent);
+            } else {
+                startService(intent);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Floating alert failed", e);
         }
     }
 

@@ -3,10 +3,11 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="12dp"
-    android:layout_marginBottom="4dp"
+    android:padding="10dp"
+    android:layout_marginBottom="2dp"
     android:background="#FFFFFF">
 
+    <!-- 时间 + 关键词标签 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -17,39 +18,78 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="2026-06-10 09:00"
-            android:textSize="12sp"
-            android:textColor="#666666" />
+            android:text="06-10 10:30"
+            android:textSize="11sp"
+            android:textColor="#999999" />
 
         <TextView
             android:id="@+id/tvKeyword"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="🔔 关键词"
-            android:textSize="12sp"
+            android:text="#红砖渣"
+            android:textSize="11sp"
             android:textColor="#FF5722"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:background="#FFF3E0" />
     </LinearLayout>
 
+    <!-- 群名 + 发送者 -->
     <TextView
         android:id="@+id/tvSender"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="发送者"
+        android:text="运输交流群 - 张三"
         android:textSize="14sp"
-        android:textColor="#000000"
-        android:textStyle="bold"
-        android:layout_marginTop="4dp" />
+        android:textColor="#333333"
+        android:layout_marginTop="2dp" />
 
+    <!-- 消息内容预览 -->
     <TextView
         android:id="@+id/tvContent"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="消息内容预览..."
-        android:textSize="13sp"
-        android:textColor="#333333"
-        android:layout_marginTop="4dp"
+        android:text="消息内容..."
+        android:textSize="12sp"
+        android:textColor="#666666"
         android:maxLines="2"
-        android:ellipsize="end" />
+        android:ellipsize="end"
+        android:layout_marginTop="2dp" />
+
+    <!-- 操作按钮行 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp">
+
+        <Button
+            android:id="@+id/btnOpenWeChat"
+            android:layout_width="wrap_content"
+            android:layout_height="28sp"
+            android:text="📱 微信"
+            android:textSize="11sp"
+            android:textColor="#07C160"
+            android:background="#E8F5E9"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:gravity="center" />
+
+        <Button
+            android:id="@+id/btnCall"
+            android:layout_width="wrap_content"
+            android:layout_height="28sp"
+            android:text="📞 电话"
+            android:textSize="11sp"
+            android:textColor="#1976D2"
+            android:background="#E3F2FD"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:gravity="center"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
 
 </LinearLayout>

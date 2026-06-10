@@ -1,17 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    
-    <!-- 核心3个权限 -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 通知监听权限 -->
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    
+    <!-- 悬浮窗权限 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     
+    <!-- 前台服务权限 (Android 13+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
-        
+
+        <!-- 主Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -20,7 +26,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        
+
+        <!-- 关键词设置页面 -->
+        <activity
+            android:name=".KeywordsActivity"
+            android:exported="false" />
+
+        <!-- 个性设置页面 -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
+        <!-- 通知监听服务 -->
         <service
             android:name=".WeChatNotificationListener"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
@@ -30,7 +47,20 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
-        
+
+        <!-- 悬浮窗服务 -->
+        <service
+            android:name=".FloatingAlertService"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- 后台保活服务 -->
+        <service
+            android:name=".KeepAliveService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
     </application>
-    
+
 </manifest>
