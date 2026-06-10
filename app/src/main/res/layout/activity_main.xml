@@ -15,93 +15,93 @@
         android:gravity="center"
         android:layout_marginBottom="16dp" />
 
-    <!-- 输入关键词 -->
+    <!-- 关键词管理区域 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="16dp">
+        android:layout_marginBottom="8dp">
 
         <EditText
-            android:id="@+id/editTextKeyword"
+            android:id="@+id/etKeyword"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="输入关键词"
             android:inputType="text" />
 
+        <Button
+            android:id="@+id/btnAdd"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="添加" />
     </LinearLayout>
 
-    <!-- 添加和删除按钮 -->
+    <!-- 当前关键词列表 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="当前关键词："
+        android:textSize="16sp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:id="@+id/tvKeywords"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="加载中..."
+        android:textSize="14sp"
+        android:padding="8dp"
+        android:background="#F5F5F5"
+        android:layout_marginBottom="16dp" />
+
+    <!-- 分隔线 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E0E0E0"
+        android:layout_marginBottom="8dp" />
+
+    <!-- 消息历史标题栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="16dp">
+        android:layout_marginBottom="8dp">
 
-        <Button
-            android:id="@+id/buttonAdd"
+        <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="添加关键词"
-            android:layout_marginEnd="8dp" />
+            android:text="匹配消息记录"
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
         <Button
-            android:id="@+id/buttonRemove"
-            android:layout_width="0dp"
+            android:id="@+id/btnClearHistory"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="删除关键词"
-            android:layout_marginStart="8dp" />
-
+            android:text="清空"
+            android:textSize="12sp" />
     </LinearLayout>
 
-    <!-- 关键词列表标题 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="当前关键词列表："
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
-
-    <!-- 关键词列表 -->
-    <Button
-        android:id="@+id/btnHistory"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="查看历史记录"
-        android:backgroundTint="#2196F3"
-        android:textColor="#FFFFFF"
-        android:layout_marginTop="8dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="当前关键词列表:"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="8dp" />
-
+    <!-- 消息列表 -->
     <ListView
-        android:id="@+id/listViewKeywords"
+        android:id="@+id/lvMessages"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@android:color/background_light"
-        android:divider="@android:color/darker_gray"
+        android:divider="#E0E0E0"
         android:dividerHeight="1dp" />
 
-    <!-- 提示信息 -->
+    <!-- 底部提示 -->
     <TextView
+        android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="提示：请在系统设置中授权通知监听权限"
-        android:textSize="14sp"
-        android:textColor="@android:color/holo_red_dark"
+        android:text="需授权通知监听权限"
+        android:textSize="12sp"
         android:gravity="center"
-        android:layout_marginTop="16dp" />
+        android:layout_marginTop="8dp" />
 
 </LinearLayout>
