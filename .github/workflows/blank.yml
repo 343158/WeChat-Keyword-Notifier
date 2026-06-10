@@ -1,5 +1,8 @@
 name: Build
 on: [push, workflow_dispatch]
+permissions:
+  contents: write
+  releases: write
 jobs:
   build:
     runs-on: ubuntu-latest
