@@ -1,8 +1,11 @@
 package com.example.wechatkeywordnotifier;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -11,6 +14,8 @@ import android.view.View;
 import android.widget.*;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.*;
@@ -20,6 +25,8 @@ public class MainActivity extends AppCompatActivity {
     public static final String KEY_KEYWORDS = "keywords";
     private static final String KEY_HISTORY = "message_history";
     private static final int MAX_HISTORY = 100;
+    private static final int REQUEST_POST_NOTIFICATIONS = 1001;
+    private static final int REQUEST_OVERLAY_PERMISSION = 1002;
 
     private EditText etKeyword;
     private TextView tvKeywords;
@@ -47,22 +54,20 @@ public class MainActivity extends AppCompatActivity {
         lvMessages.setAdapter(messageAdapter);
 
         btnAdd.setOnClickListener(v -> addKeyword());
-
         btnClearHistory.setOnClickListener(v -> clearHistory());
 
-        // 点击消息 -> 跳转到微信对应聊天
         lvMessages.setOnItemClickListener((parent, view, position, id) -> {
             MessageItem item = messageList.get(position);
             openWeChatChat(item);
         });
 
-        // 长按删除
         lvMessages.setOnItemLongClickListener((parent, view, position, id) -> {
             showDeleteDialog(position);
             return true;
         });
 
-        checkPermission();
+        // 检查所有权限
+        checkAllPermissions();
     }
 
     @Override
@@ -72,7 +77,132 @@ public class MainActivity extends AppCompatActivity {
         if (messageAdapter != null) {
             messageAdapter.notifyDataSetChanged();
         }
-        checkPermission();
+        updatePermissionStatus();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_OVERLAY_PERMISSION) {
+            updatePermissionStatus();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_POST_NOTIFICATIONS) {
+            updatePermissionStatus();
+        }
+    }
+
+    /**
+     * 检查所有必需权限，逐个引导授权
+     */
+    private void checkAllPermissions() {
+        // 1. 通知发送权限 (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        REQUEST_POST_NOTIFICATIONS);
+                return; // 等待授权结果后再检查下一个
+            }
+        }
+
+        // 2. 悬浮窗权限
+        if (!Settings.canDrawOverlays(this)) {
+            showOverlayPermissionDialog();
+            return;
+        }
+
+        // 3. 通知监听权限
+        if (!hasNotificationListenerPermission()) {
+            showNotificationListenerDialog();
+            return;
+        }
+
+        // 全部授权完成
+        tvStatus.setText("✅ 监听中...");
+        tvStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+        tvStatus.setOnClickListener(null);
+    }
+
+    private void updatePermissionStatus() {
+        StringBuilder status = new StringBuilder();
+        boolean allGranted = true;
+
+        // 检查通知发送权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                status.append("❌ 通知权限\n");
+                allGranted = false;
+            }
+        }
+
+        // 检查悬浮窗权限
+        if (!Settings.canDrawOverlays(this)) {
+            status.append("❌ 悬浮窗权限\n");
+            allGranted = false;
+        }
+
+        // 检查通知监听权限
+        if (!hasNotificationListenerPermission()) {
+            status.append("❌ 通知监听权限\n");
+            allGranted = false;
+        }
+
+        if (allGranted) {
+            tvStatus.setText("✅ 监听中...");
+            tvStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+            tvStatus.setOnClickListener(null);
+        } else {
+            tvStatus.setText("⚠ 点击授权缺失权限");
+            tvStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+            tvStatus.setOnClickListener(v -> checkAllPermissions());
+        }
+    }
+
+    private boolean hasNotificationListenerPermission() {
+        String serviceName = getPackageName() + "/" + WeChatNotificationListener.class.getName();
+        String enabledListeners = Settings.Secure.getString(getContentResolver(),
+                "enabled_notification_listeners");
+        return enabledListeners != null && enabledListeners.contains(serviceName);
+    }
+
+    private void showOverlayPermissionDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("需要悬浮窗权限")
+                .setMessage("本App需要悬浮窗权限来在屏幕顶部弹窗提醒您。\n\n点击[去授权]后，找到本App并打开开关。")
+                .setPositiveButton("去授权", (dialog, which) -> {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + getPackageName()));
+                    startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION);
+                })
+                .setNegativeButton("稍后", (dialog, which) -> updatePermissionStatus())
+                .setCancelable(false)
+                .show();
+    }
+
+    private void showNotificationListenerDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("需要通知监听权限")
+                .setMessage("本App需要[通知使用权]才能监听微信消息。\n\n点击[去授权]后，在设置页面找到本App，打开开关即可。")
+                .setPositiveButton("去授权", (dialog, which) -> {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Intent intent = new Intent(Settings.ACTION_SETTINGS);
+                        startActivity(intent);
+                        Toast.makeText(this, "请在设置中找到[通知使用权]并授权本App", Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("稍后", (dialog, which) -> updatePermissionStatus())
+                .setCancelable(false)
+                .show();
     }
 
     private void loadKeywords() {
@@ -147,34 +277,14 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
-    /**
-     * 点击消息 -> 打开微信对应的聊天
-     * 利用微信通知中提取的群名/发送者信息
-     */
     private void openWeChatChat(MessageItem item) {
         try {
-            // 方案：通过微信的 Uri scheme 打开
-            // 微信可以通过 com.tencent.mm 的 launcher activity 打开，但无法直接指定聊天
-            // 最可行的方式：模拟通知点击行为，但需要 NotificationListenerService 缓存 PendingIntent
-            
-            // 如果有缓存的 PendingIntent（由 NotificationListenerService 保存），直接触发
-            String pendingIntentData = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .getString("pending_intent_" + item.time, "");
-            
-            if (!TextUtils.isEmpty(pendingIntentData)) {
-                // 有缓存的 Intent 数据
-                // 注意：PendingIntent 无法直接序列化，这里改用通知方式
-            }
-            
-            // 实际可行方案：直接打开微信主界面
-            // 用户可以手动找到对应聊天
             Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.tencent.mm");
             if (launchIntent != null) {
                 startActivity(launchIntent);
             } else {
                 Toast.makeText(this, "未安装微信", Toast.LENGTH_SHORT).show();
             }
-            
         } catch (Exception e) {
             Toast.makeText(this, "打开微信失败", Toast.LENGTH_SHORT).show();
         }
@@ -211,39 +321,6 @@ public class MainActivity extends AppCompatActivity {
                     .apply();
         } catch (Exception e) {
             e.printStackTrace();
-        }
-    }
-
-    private void checkPermission() {
-        String serviceName = getPackageName() + "/" + WeChatNotificationListener.class.getName();
-        String enabledListeners = Settings.Secure.getString(getContentResolver(), 
-                "enabled_notification_listeners");
-        boolean hasPermission = enabledListeners != null && enabledListeners.contains(serviceName);
-        if (!hasPermission) {
-            tvStatus.setText("⚠ 需授权通知监听权限（点击此处）");
-            tvStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
-            tvStatus.setOnClickListener(v -> openNotificationListenerSettings());
-            new AlertDialog.Builder(this)
-                    .setTitle("需要授权通知监听")
-                    .setMessage("本App需要[通知使用权]才能监听微信消息。\n\n点击[去授权]后，在设置页面找到本App，打开开关即可。")
-                    .setPositiveButton("去授权", (dialog, which) -> openNotificationListenerSettings())
-                    .setCancelable(false)
-                    .show();
-        } else {
-            tvStatus.setText("✅ 监听中...");
-            tvStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
-            tvStatus.setOnClickListener(null);
-        }
-    }
-
-    private void openNotificationListenerSettings() {
-        try {
-            Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
-            startActivity(intent);
-        } catch (Exception e) {
-            Intent intent = new Intent(Settings.ACTION_SETTINGS);
-            startActivity(intent);
-            Toast.makeText(this, "请在设置中找到[通知使用权]并授权本App", Toast.LENGTH_LONG).show();
         }
     }
 
