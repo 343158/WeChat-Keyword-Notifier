@@ -1,273 +1,227 @@
 package com.example.wechatkeywordnotifier;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.graphics.PixelFormat;
-import android.media.AudioAttributes;
-import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.preference.PreferenceManager;
+import android.os.PowerManager;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.WindowManager;
-import android.widget.Button;
-import android.widget.TextView;
 import androidx.core.app.NotificationCompat;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
-
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 public class WeChatNotificationListener extends NotificationListenerService {
-    
-    private static final String CHANNEL_ID = "keyword_alert_channel";
-    private static final String TAG = "WeChatListener";
-    private static final String WECHAT_PACKAGE = "com.tencent.mm";
-    private static final String PREFS_HISTORY = "message_history";
+    private static final String TAG = "WeChatNotifier";
+    private static final String PREFS_NAME = "WeChatNotifier";
+    private static final String KEY_KEYWORDS = "keywords";
+    private static final String KEY_HISTORY = "message_history";
     private static final int MAX_HISTORY = 100;
-    
-    private SharedPreferences prefs;
-    private SharedPreferences historyPrefs;
-    private Set<String> keywords;
+
     private TextToSpeech tts;
-    private boolean ttsReady = false;
-    private WindowManager windowManager;
-    private View floatingView;
-    
+    private Set<String> keywords = new HashSet<>();
+    private static final String[] DEFAULT_KEYWORDS = {"红黄土", "干杂土", "代运", "放飞", "红砖渣"};
+
     @Override
     public void onCreate() {
         super.onCreate();
-        prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        historyPrefs = getSharedPreferences(PREFS_HISTORY, Context.MODE_PRIVATE);
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        initTTS();
-        loadKeywords();
-        createNotificationChannel();
-    }
-    
-    private void initTTS() {
+        Log.d(TAG, "Service onCreate");
+        
+        // 初始化 TTS
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
-                ttsReady = true;
                 tts.setLanguage(Locale.CHINESE);
+                Log.d(TAG, "TTS 初始化成功");
             }
         });
     }
-    
+
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
-        if (!WECHAT_PACKAGE.equals(sbn.getPackageName())) {
+        Log.d(TAG, "收到通知: " + sbn.getPackageName());
+        
+        // 只处理微信通知
+        if (!"com.tencent.mm".equals(sbn.getPackageName())) {
             return;
         }
-        
+
+        // 加载关键词
         loadKeywords();
-        
-        Bundle extras = sbn.getNotification().extras;
-        if (extras == null) return;
-        
-        String title = extras.getString(Notification.EXTRA_TITLE, "");
-        String text = extras.getString(Notification.EXTRA_TEXT, "");
-        String bigText = extras.getString(Notification.EXTRA_BIG_TEXT, "");
-        
-        StringBuilder fullText = new StringBuilder();
-        if (!title.isEmpty()) fullText.append(title).append(" ");
-        if (!text.isEmpty()) fullText.append(text).append(" ");
-        if (!bigText.isEmpty()) fullText.append(bigText);
-        
-        String content = fullText.toString();
-        Log.d(TAG, "收到微信通知: " + content);
-        
-        for (String keyword : keywords) {
-            if (content.contains(keyword)) {
-                Log.d(TAG, "匹配到关键词: " + keyword);
-                long timestamp = System.currentTimeMillis();
-                saveToHistory(title, text, keyword, timestamp);
-                sendAlert(title, content, keyword, timestamp);
-                speakAlert(keyword, title, text);
-                showFloatingWindow(title, text, keyword);
-                break;
-            }
-        }
-    }
-    
-    private void saveToHistory(String title, String content, String keyword, long timestamp) {
-        try {
-            JSONArray history = new JSONArray(historyPrefs.getString("history", "[]"));
-            
-            JSONObject entry = new JSONObject();
-            entry.put("title", title);
-            entry.put("content", content);
-            entry.put("keyword", keyword);
-            entry.put("timestamp", timestamp);
-            entry.put("time", new SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(new Date(timestamp)));
-            
-            history.put(entry);
-            
-            // Keep only last MAX_HISTORY entries
-            if (history.length() > MAX_HISTORY) {
-                JSONArray trimmed = new JSONArray();
-                for (int i = history.length() - MAX_HISTORY; i < history.length(); i++) {
-                    trimmed.put(history.get(i));
-                }
-                history = trimmed;
-            }
-            
-            historyPrefs.edit().putString("history", history.toString()).apply();
-        } catch (Exception e) {
-            Log.e(TAG, "保存历史失败", e);
-        }
-    }
-    
-    private void sendAlert(String title, String content, String keyword, long timestamp) {
-        Intent intent = new Intent(this, HistoryActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, (int) timestamp, intent, 
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("⚠️ 关键词提醒: " + keyword)
-            .setContentText(title + ": " + content)
-            .setStyle(new NotificationCompat.BigTextStyle()
-                .bigText("【" + keyword + "】\n来自: " + title + "\n内容: " + content))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .setVibrate(new long[]{0, 500, 200, 500});
-        
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.notify((int) timestamp, builder.build());
-    }
-    
-    private void speakAlert(String keyword, String title, String content) {
-        if (ttsReady && tts != null) {
-            String message = "提醒，匹配到关键词" + keyword + "，来自" + title;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, "keyword_alert");
-            } else {
-                tts.speak(message, TextToSpeech.QUEUE_FLUSH, null);
-            }
-        }
-    }
-    
-    private void showFloatingWindow(String title, String content, String keyword) {
-        if (floatingView != null) {
-            removeFloatingWindow();
-        }
-        
-        LayoutInflater inflater = LayoutInflater.from(this);
-        floatingView = inflater.inflate(R.layout.floating_alert, null);
-        
-        TextView tvTitle = floatingView.findViewById(R.id.tv_alert_title);
-        TextView tvContent = floatingView.findViewById(R.id.tv_alert_content);
-        TextView tvKeyword = floatingView.findViewById(R.id.tv_alert_keyword);
-        Button btnClose = floatingView.findViewById(R.id.btn_close);
-        Button btnHistory = floatingView.findViewById(R.id.btn_history);
-        
-        tvTitle.setText(title);
-        tvContent.setText(content);
-        tvKeyword.setText("匹配: " + keyword);
-        
-        btnClose.setOnClickListener(v -> removeFloatingWindow());
-        btnHistory.setOnClickListener(v -> {
-            removeFloatingWindow();
-            Intent intent = new Intent(this, HistoryActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-        });
-        
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O 
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY 
-                : WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-            PixelFormat.TRANSLUCENT
-        );
-        params.gravity = Gravity.TOP;
-        params.y = 100;
-        
-        try {
-            windowManager.addView(floatingView, params);
-            // Auto remove after 10 seconds
-            new Handler(Looper.getMainLooper()).postDelayed(this::removeFloatingWindow, 10000);
-        } catch (Exception e) {
-            Log.e(TAG, "悬浮窗显示失败", e);
-        }
-    }
-    
-    private void removeFloatingWindow() {
-        if (floatingView != null) {
-            try {
-                windowManager.removeView(floatingView);
-            } catch (Exception e) {
-                Log.e(TAG, "移除悬浮窗失败", e);
-            }
-            floatingView = null;
-        }
-    }
-    
-    @Override
-    public void onNotificationRemoved(StatusBarNotification sbn) {
-    }
-    
-    private void loadKeywords() {
-        keywords = prefs.getStringSet(MainActivity.KEY_KEYWORDS, new HashSet<>());
         if (keywords.isEmpty()) {
-            keywords = new HashSet<>();
-            keywords.add("红黄土");
-            keywords.add("干杂土");
-            keywords.add("代运");
-            keywords.add("放飞");
-            keywords.add("红砖渣");
-            prefs.edit().putStringSet(MainActivity.KEY_KEYWORDS, keywords).apply();
+            Log.d(TAG, "关键词列表为空，使用默认关键词");
+            keywords = new HashSet<>(Arrays.asList(DEFAULT_KEYWORDS));
+        }
+
+        try {
+            Notification notification = sbn.getNotification();
+            Bundle extras = notification.extras;
+            
+            if (extras == null) {
+                Log.d(TAG, "Notification extras 为空");
+                return;
+            }
+
+            // 获取通知标题和内容
+            String title = extras.getString(Notification.EXTRA_TITLE, "");
+            String text = extras.getString(Notification.EXTRA_TEXT, "");
+            String bigText = extras.getString(Notification.EXTRA_BIG_TEXT, "");
+            
+            // 尝试获取更多内容
+            CharSequence[] lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
+            StringBuilder fullText = new StringBuilder();
+            if (lines != null) {
+                for (CharSequence line : lines) {
+                    fullText.append(line).append("\n");
+                }
+            }
+            
+            // 组合所有文本内容
+            String fullContent = text + " " + bigText + " " + fullText.toString();
+            
+            Log.d(TAG, "标题: " + title);
+            Log.d(TAG, "内容: " + fullContent);
+
+            // 检查是否包含关键词
+            String matchedKeyword = null;
+            for (String keyword : keywords) {
+                if (fullContent.contains(keyword)) {
+                    matchedKeyword = keyword;
+                    break;
+                }
+            }
+
+            if (matchedKeyword != null) {
+                Log.d(TAG, "匹配到关键词: " + matchedKeyword);
+                
+                // 提取发送者名字
+                String sender = title;
+                String groupName = "";
+                
+                // 判断是群消息还是私聊
+                if (title.contains("(") && title.contains(")")) {
+                    // 群消息格式: 群名(发送者)
+                    int start = title.indexOf("(");
+                    int end = title.indexOf(")");
+                    groupName = title.substring(0, start);
+                    sender = title.substring(start + 1, end);
+                }
+                
+                // 保存消息到历史记录
+                saveMessage(matchedKeyword, sender, fullContent.trim(), groupName);
+                
+                // 发送系统通知
+                sendAlertNotification(matchedKeyword, sender, fullContent.trim());
+                
+                // 显示悬浮窗
+                showFloatingAlert(matchedKeyword, sender, fullContent.trim());
+                
+                // 语音播报
+                speakAlert(matchedKeyword, sender);
+                
+            } else {
+                Log.d(TAG, "未匹配到关键词");
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "处理通知时出错", e);
         }
     }
-    
-    private void createNotificationChannel() {
-        NotificationChannel channel = new NotificationChannel(
-            CHANNEL_ID,
-            "关键词提醒",
-            NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("微信关键词匹配提醒");
-        channel.enableVibration(true);
-        
-        AudioAttributes audioAttributes = new AudioAttributes.Builder()
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-            .build();
-        channel.setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI, audioAttributes);
-        
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.createNotificationChannel(channel);
+
+    private void loadKeywords() {
+        keywords = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getStringSet(KEY_KEYWORDS, new HashSet<>());
+        Log.d(TAG, "加载关键词: " + keywords);
     }
-    
+
+    private void saveMessage(String keyword, String sender, String content, String group) {
+        try {
+            // 获取现有历史记录
+            String historyJson = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString(KEY_HISTORY, "[]");
+            JSONArray jsonArray = new JSONArray(historyJson);
+            
+            // 创建新消息记录
+            JSONObject msg = new JSONObject();
+            msg.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
+            msg.put("keyword", keyword);
+            msg.put("sender", sender);
+            msg.put("content", content);
+            msg.put("group", group);
+            
+            // 添加到历史记录开头
+            JSONArray newArray = new JSONArray();
+            newArray.put(msg);
+            for (int i = 0; i < jsonArray.length() && i < MAX_HISTORY - 1; i++) {
+                newArray.put(jsonArray.getJSONObject(i));
+            }
+            
+            // 保存
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_HISTORY, newArray.toString())
+                    .apply();
+            
+            Log.d(TAG, "消息已保存到历史记录");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "保存消息失败", e);
+        }
+    }
+
+    private void sendAlertNotification(String keyword, String sender, String content) {
+        try {
+            String channelId = "wechat_keyword_alert";
+            
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
+                    .setContentTitle("🔔 关键词提醒")
+                    .setContentText("匹配到: " + keyword + " | 来自: " + sender)
+                    .setSmallIcon(R.drawable.ic_launcher_foreground)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setAutoCancel(true);
+            
+            android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
+            nm.notify((int) System.currentTimeMillis(), builder.build());
+            
+            Log.d(TAG, "系统通知已发送");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "发送通知失败", e);
+        }
+    }
+
+    private void showFloatingAlert(String keyword, String sender, String content) {
+        try {
+            Intent intent = new Intent(this, FloatingAlertService.class);
+            intent.putExtra("keyword", keyword);
+            intent.putExtra("sender", sender);
+            intent.putExtra("content", content);
+            startService(intent);
+            Log.d(TAG, "悬浮窗服务已启动");
+        } catch (Exception e) {
+            Log.e(TAG, "启动悬浮窗失败", e);
+        }
+    }
+
+    private void speakAlert(String keyword, String sender) {
+        try {
+            if (tts != null) {
+                String text = "提醒，匹配到关键词" + keyword + "，来自" + sender;
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+                Log.d(TAG, "语音播报: " + text);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "语音播报失败", e);
+        }
+    }
+
     @Override
     public void onDestroy() {
-        super.onDestroy();
-        removeFloatingWindow();
         if (tts != null) {
             tts.stop();
             tts.shutdown();
         }
+        super.onDestroy();
     }
 }
