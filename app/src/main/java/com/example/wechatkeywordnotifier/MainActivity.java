@@ -16,6 +16,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.*;
+import android.widget.CompoundButton;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -51,6 +52,16 @@ public class MainActivity extends AppCompatActivity {
         Button btnViewMessages = findViewById(R.id.btnViewMessages);
         Button btnRingtone = findViewById(R.id.btnRingtone);
         Button btnSettings = findViewById(R.id.btnSettings);
+        Switch switchTTS = findViewById(R.id.switchTTS);
+
+        // 语音播报开关
+        SharedPreferences prefsMain = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        switchTTS.setChecked(prefsMain.getBoolean("tts_enabled", true));
+        switchTTS.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefsMain.edit().putBoolean("tts_enabled", isChecked).apply();
+            Toast.makeText(this, isChecked ? "语音播报已开启" : "语音播报已关闭",
+                    Toast.LENGTH_SHORT).show();
+        });
 
         // 4个快捷入口
         btnKeywords.setOnClickListener(v ->
