@@ -69,48 +69,13 @@ public class LicenseManager {
     }
 
     /**
-     * 联网验证当前授权码是否仍然有效
-     * 如果码已从远程列表移除，自动清除本地激活状态
+     * 检查当前授权码是否仍然有效
+     * 本地已激活即为有效，无需联网复查
+     * 授权码一次性使用：激活后从远程删除，但本机永久有效
      */
     public boolean verifyCurrentCodeStillValid() {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        if (!prefs.getBoolean(KEY_VERIFIED, false)) {
-            return false;
-        }
-
-        String savedCode = prefs.getString(KEY_LICENSE_CODE, "");
-        if (savedCode.isEmpty()) {
-            return false;
-        }
-
-        try {
-            String json = fetchUrl(RAW_URL);
-            if (json == null || json.isEmpty()) {
-                // 网络不通，不强制失效（容错）
-                return true;
-            }
-
-            JSONObject root = new JSONObject(json);
-            JSONArray codesArray = root.getJSONArray("codes");
-
-            boolean stillValid = false;
-            for (int i = 0; i < codesArray.length(); i++) {
-                if (savedCode.equalsIgnoreCase(codesArray.getString(i))) {
-                    stillValid = true;
-                    break;
-                }
-            }
-
-            if (!stillValid) {
-                // 码已从远程列表移除 → 清除本地激活
-                prefs.edit().clear().apply();
-                return false;
-            }
-            return true;
-        } catch (Exception e) {
-            // 异常时不强制失效
-            return true;
-        }
+        return prefs.getBoolean(KEY_VERIFIED, false);
     }
 
     /**
