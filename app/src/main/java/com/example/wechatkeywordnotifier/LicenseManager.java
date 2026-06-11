@@ -15,12 +15,11 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * 授权码管理器
  *
- * 每个授权码只能使用一次。
- * 验证成功后本地永久激活（无需复验）。
- *
- * 管理方式：
- * - 发码：在 license_codes.json 中添加新码
- * - 废码：验证后由管理员从 license_codes.json 中手动删除该码
+ * 一次性授权码机制：
+ * 1. 用户输入授权码 → 联网校验 → 匹配则本地永久激活
+ * 2. 每次启动时，联网检查已用码是否仍在白名单中
+ *    - 码已不在列表 → 自动清除本地激活 → 重新要求输入授权码
+ * 3. 管理员从 license_codes.json 手动删除已用码即可作废
  */
 public class LicenseManager {
 
@@ -41,7 +40,7 @@ public class LicenseManager {
     }
 
     /**
-     * 检查是否已激活（本地检查，永久有效）
+     * 检查是否已激活（仅本地检查）
      */
     public boolean isVerified() {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -49,7 +48,54 @@ public class LicenseManager {
     }
 
     /**
-     * 验证授权码
+     * 联网验证当前授权码是否仍然有效
+     * 如果码已从列表移除，自动清除本地激活状态
+     *
+     * @return true = 码仍然有效，false = 码已作废或网络失败无法验证
+     */
+    public boolean verifyCurrentCodeStillValid() {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_VERIFIED, false)) {
+            return false; // 未激活
+        }
+
+        String savedCode = prefs.getString(KEY_LICENSE_CODE, "");
+        if (savedCode.isEmpty()) {
+            return false;
+        }
+
+        try {
+            String json = fetchUrl(RAW_URL);
+            if (json == null || json.isEmpty()) {
+                // 网络不通，不强制失效（容错）
+                return true;
+            }
+
+            JSONObject root = new JSONObject(json);
+            JSONArray codesArray = root.getJSONArray("codes");
+
+            boolean stillValid = false;
+            for (int i = 0; i < codesArray.length(); i++) {
+                if (savedCode.equalsIgnoreCase(codesArray.getString(i))) {
+                    stillValid = true;
+                    break;
+                }
+            }
+
+            if (!stillValid) {
+                // 码已从白名单移除 → 清除本地激活
+                prefs.edit().clear().apply();
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            // 异常时不强制失效
+            return true;
+        }
+    }
+
+    /**
+     * 验证授权码（首次激活）
      * 成功后本地永久激活
      */
     public VerifyResult verifyOnline(String code) {
