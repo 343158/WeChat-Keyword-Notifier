@@ -45,7 +45,7 @@ public class WeChatNotificationListener extends NotificationListenerService {
         // 创建通知渠道
         if (Build.VERSION.SDK_INT >= 26) {
             android.app.NotificationChannel channel = new android.app.NotificationChannel(
-                    CHANNEL_ID, "关键词提醒", android.app.NotificationManager.IMPORTANCE_HIGH);
+                    CHANNEL_ID, "拾微", android.app.NotificationManager.IMPORTANCE_HIGH);
             android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
             nm.createNotificationChannel(channel);
         }
@@ -133,7 +133,7 @@ public class WeChatNotificationListener extends NotificationListenerService {
     private void sendAlertNotification(String keyword, String sender, String content, Notification originalNotification) {
         try {
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setContentTitle("关键词提醒: " + keyword)
+                    .setContentTitle("拾微: " + keyword)
                     .setContentText("来自: " + sender + " | " + content.substring(0, Math.min(content.length(), 50)))
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
