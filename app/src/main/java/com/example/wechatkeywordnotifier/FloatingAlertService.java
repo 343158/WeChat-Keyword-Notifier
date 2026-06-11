@@ -55,7 +55,7 @@ public class FloatingAlertService extends Service {
         Button btnView = floatingView.findViewById(R.id.floatingBtnView);
         Button btnClose = floatingView.findViewById(R.id.floatingBtnClose);
 
-        titleView.setText("关键词提醒: " + keyword);
+        titleView.setText("拾微: " + keyword);
         if (content.length() > 100) {
             content = content.substring(0, 100) + "...";
         }
