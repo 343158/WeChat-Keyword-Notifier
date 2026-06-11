@@ -13,7 +13,13 @@ import androidx.appcompat.app.AppCompatActivity;
 
 /**
  * 授权码验证页面
- * App 启动后首先进入此页面，验证通过后跳转到 MainActivity
+ * App 启动后首先进入此页面
+ *
+ * 逻辑：
+ * 1. 未激活 → 显示授权码输入界面
+ * 2. 已激活 → 联网检查码是否仍在白名单
+ *    - 码仍在列表 → 直接进入主界面
+ *    - 码已被移除 → 清除本地激活，要求重新输入
  */
 public class AuthActivity extends AppCompatActivity {
 
@@ -34,12 +40,31 @@ public class AuthActivity extends AppCompatActivity {
 
         final LicenseManager licenseManager = new LicenseManager(this);
 
-        // 快速检查：已授权且未过期 → 直接进入
         if (licenseManager.isVerified()) {
-            enterMainActivity();
+            // 已激活 → 联网复查码是否仍然有效
+            btnVerify.setEnabled(false);
+            btnVerify.setText("验证中...");
+            progressBar.setVisibility(View.VISIBLE);
+
+            new Thread(() -> {
+                final boolean stillValid = licenseManager.verifyCurrentCodeStillValid();
+
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    if (stillValid) {
+                        enterMainActivity();
+                    } else {
+                        // 码已作废，显示输入界面
+                        btnVerify.setEnabled(true);
+                        btnVerify.setText("验 证");
+                        showError("您的授权码已失效，请重新输入新授权码");
+                    }
+                });
+            }).start();
             return;
         }
 
+        // 未激活 → 显示输入界面
         btnVerify.setOnClickListener(v -> {
             String code = etCode.getText().toString().trim();
             if (TextUtils.isEmpty(code)) {
@@ -47,13 +72,11 @@ public class AuthActivity extends AppCompatActivity {
                 return;
             }
 
-            // 显示加载状态
             btnVerify.setEnabled(false);
             btnVerify.setText("验证中...");
             tvError.setVisibility(View.GONE);
             progressBar.setVisibility(View.VISIBLE);
 
-            // 在后台线程验证
             new Thread(() -> {
                 LicenseManager.VerifyResult result = licenseManager.verifyOnline(code);
 
